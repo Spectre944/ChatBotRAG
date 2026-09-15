@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Чат по документации приборов</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 40px auto; }
+    #answer { white-space: pre-wrap; border: 1px solid #ddd; padding: 12px; min-height: 60px; margin-top: 12px; }
+    input { width: 80%; padding: 8px; }
+    button { padding: 8px 16px; }
+  </style>
+</head>
+<body>
+  <h3>Задайте вопрос по документации</h3>
+  <input id="question" placeholder="Как обнулить дозу?" />
+  <button onclick="ask()">Спросить</button>
+  <div id="answer"></div>
+
+  <script>
+    async function ask() {
+      const question = document.getElementById("question").value;
+      const answerBox = document.getElementById("answer");
+      answerBox.textContent = "";
+
+      // Замените на адрес вашего сервера при деплое
+      const response = await fetch("http://localhost:8000/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunkText = decoder.decode(value);
+        // Каждое SSE-сообщение начинается с "data: "
+        const lines = chunkText.split("\n").filter(l => l.startsWith("data: "));
+        for (const line of lines) {
+          const token = line.replace("data: ", "");
+          if (token === "[DONE]") continue;
+          answerBox.textContent += token;
+        }
+      }
+    }
+  </script>
+</body>
+</html>
