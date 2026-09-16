@@ -13,6 +13,7 @@ RAG-чат-бот v2 для документации по приборам.
     pip install sentence-transformers faiss-cpu pymupdf python-docx requests
 """
 
+import difflib
 import json
 import pickle
 import re
@@ -221,6 +222,10 @@ class DocumentIndex:
         self.save()
         print(f"Добавлено {len(new_chunks)} чанков по прибору «{device_name}»")
 
+    def get_known_devices(self) -> list[str]:
+        """Уникальный список приборов, которые уже есть в индексе."""
+        return sorted({m["device"] for m in self.metadata})
+
     def search(self, query: str, k: int = 5, device_filter: str | None = None) -> list[dict]:
         q_emb = self.embedder.encode(
             [f"query: {query}"], normalize_embeddings=True
@@ -312,6 +317,35 @@ def load_glossary() -> dict[str, list[str]]:
     return data
 
 
+def detect_device(question: str, known_devices: list[str]) -> str | None:
+    """
+    Определяет, о каком приборе идёт речь в вопросе.
+    1) Сначала ищем точное вхождение названия прибора (без учёта регистра).
+    2) Если не нашли — нечёткое сравнение слов вопроса с названиями приборов,
+       чтобы выдержать опечатки (например, "МСУ-УМ" вместо "МКС-УМ").
+    Возвращает None, если ни один прибор не похож на упомянутый — в этом
+    случае поиск просто пройдёт по всей базе, без фильтра.
+    """
+    q_lower = question.lower()
+
+    for device in known_devices:
+        if device.lower() in q_lower:
+            return device
+
+    words = re.findall(r"[\w\-]+", question)
+    devices_lower = [d.lower() for d in known_devices]
+    best_device = None
+    best_ratio = 0.0
+    for word in words:
+        matches = difflib.get_close_matches(word.lower(), devices_lower, n=1, cutoff=0.6)
+        if matches:
+            ratio = difflib.SequenceMatcher(None, word.lower(), matches[0]).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_device = known_devices[devices_lower.index(matches[0])]
+    return best_device
+
+
 def expand_query_with_glossary(question: str, glossary: dict[str, list[str]]) -> list[str]:
     """
     Быстрая и предсказуемая замена бытовых терминов на официальные из
@@ -360,10 +394,8 @@ class ClaudeLLM:
     Важно: retrieval (поиск чанков) остаётся полностью локальным —
     Claude API получает уже найденный контекст как обычный текст в
     промпте, у него нет доступа к вашему индексу или файлам.
-    claude-haiku-4-5-20251001
-    claude-sonnet-5
     """
-    def __init__(self, model: str = "claude-haiku-4-5-20251001", api_key: str | None = None):
+    def __init__(self, model: str = "claude-sonnet-5", api_key: str | None = None):
         import anthropic
         import os
         self.client = anthropic.Anthropic(api_key=api_key or os.environ["ANTHROPIC_API_KEY"])
@@ -429,6 +461,15 @@ def main():
     else:
         print("Индекс не найден, создаю новый и добавляю документы...")
         index.add_documents("./docs/MKS_UM", device_name="МКС-УМ")
+        index.add_documents("./docs/Spectra", device_name="МКС-11 Specta")
+        index.add_documents("./docs/Guarder", device_name="ДКГ-24 Guarder")
+        # index.add_documents("./docs/-", device_name="ДРГ-Т")
+        # index.add_documents("./docs/-", device_name="МКС-05 Терра")
+        # index.add_documents("./docs/-", device_name="МКС-05 Терра П")
+        # index.add_documents("./docs/-", device_name="МКС-05 Терра П+")
+        # index.add_documents("./docs/-", device_name="ДКГ-21M")
+        # index.add_documents("./docs/-", device_name="ДКГ-21")
+        # index.add_documents("./docs/-", device_name="ДКГ-23")
 
     glossary = load_glossary()
     llm = OllamaLLM(model_name="mistral")
@@ -443,6 +484,13 @@ def main():
             index.add_documents(folder, device)
             continue
 
+        # Определяем, о каком приборе идёт речь — и ищем только внутри его
+        # документации, а не по всей базе сразу
+        known_devices = index.get_known_devices()
+        device = detect_device(question, known_devices)
+        if device:
+            print(f"[Определён прибор]: {device}")
+
         # Сначала пробуем быстрый и предсказуемый словарь терминов.
         # К LLM обращаемся только если словарь ничего не подсказал —
         # это и быстрее, и надёжнее (см. проблему с зацикливанием модели).
@@ -454,7 +502,7 @@ def main():
         seen_texts = set()
         results = []
         for q in queries:
-            for r in index.search(q, k=3):
+            for r in index.search(q, k=3, device_filter=device):
                 key = r["text"][:80]
                 if key not in seen_texts:
                     seen_texts.add(key)

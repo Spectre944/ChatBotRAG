@@ -12,14 +12,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from main import (
+from rag_chatbot_v2 import (
     ClaudeLLM,
     DocumentIndex,
     OllamaLLM,
+    detect_device,
     expand_query,
     expand_query_with_glossary,
     load_glossary,
@@ -54,13 +53,15 @@ class ChatRequest(BaseModel):
 
 
 def build_context(question: str) -> tuple[str, list[dict]]:
+    device = detect_device(question, index.get_known_devices())
+
     glossary_variants = expand_query_with_glossary(question, glossary)
     queries = [question] + glossary_variants if glossary_variants else expand_query(question, llm)
 
     seen = set()
     results = []
     for q in queries:
-        for r in index.search(q, k=3):
+        for r in index.search(q, k=3, device_filter=device):
             key = r["text"][:80]
             if key not in seen:
                 seen.add(key)
@@ -78,10 +79,6 @@ def stream_answer(question: str):
         yield f"data: {token}\n\n"
     yield "data: [DONE]\n\n"
 
-@app.get("/", response_class=HTMLResponse)
-async def read_index():
-    with open("index.html", encoding="utf-8") as f:
-        return f.read()
 
 @app.post("/chat")
 def chat(req: ChatRequest):
