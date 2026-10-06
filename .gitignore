@@ -1,3 +1,14 @@
-/venv
-/docs
-/__pycache__
+# Секреты
+api_key.txt
+
+# Собранный индекс (большой и генерируется из исходников — не храним в git)
+index_data/
+
+# Логи дебаг-режима
+logs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
