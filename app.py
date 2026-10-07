@@ -9,6 +9,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from config import LLM_MODEL, LLM_PROVIDER
 from debug_logger import DebugLogger
@@ -61,3 +63,11 @@ def stream_answer(question: str):
 @app.post("/chat")
 def chat(req: ChatRequest):
     return StreamingResponse(stream_answer(req.question), media_type="text/event-stream")
+
+@app.get("/")
+def root():
+    return FileResponse("index.html")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

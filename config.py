@@ -22,8 +22,8 @@ DEBUG_LOG_PATH = LOG_DIR / "debug.jsonl"
 # Небольшая/бюджетная модель по умолчанию. Для ответов по уже найденному
 # контексту "ума" топовой модели обычно не требуется — основное качество
 # определяет retrieval, а не размер модели (см. всю историю отладки проекта).
-LLM_PROVIDER = "openai"  # "claude" | "openai" | "ollama"
-LLM_MODEL = "GPT-5 nano"
+LLM_PROVIDER = "ollama"  # "claude" | "openai" | "ollama"
+LLM_MODEL = "mistral" # mistral | GPT-5 nano
 OLLAMA_BASE_URL = "http://localhost:11434"
 
 # --- Эмбеддинги и поиск ---
