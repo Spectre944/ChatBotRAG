@@ -12,3 +12,8 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# resources
+pages/МКС-УМ — універсальний дозиметр-радіометр _ ЕКОТЕСТ_files
+pages/МКС-11ГН СПЕКТРА — пошуковий дозиметр-радіометр_files
+pages/Купити PRD GUARDER ДКГ-24 — пошуковий дозиметр_files

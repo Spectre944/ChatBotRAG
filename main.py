@@ -21,7 +21,7 @@ def main() -> None:
     else:
         print("Индекс не найден, создаю новый и добавляю документы...")
         index.add_documents("./docs/MKS_UM", device_name="МКС-УМ")
-        index.add_documents("./docs/Spectra", device_name="МКС-11 Specta")
+        index.add_documents("./docs/Spectra", device_name="МКС-11 Spectra")
         index.add_documents("./docs/Guarder", device_name="ДКГ-24 Guarder")
         # index.add_documents("./docs/-", device_name="ДРГ-Т")
         # index.add_documents("./docs/-", device_name="МКС-05 Терра")
