@@ -6,7 +6,7 @@ JSON-строка со всей цепочкой обработки — сам �
 дочитывать построчно, не загружая весь файл в память, и легко парсить
 скриптом для анализа истории вопросов.
 """
-import json
+import json, time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,12 +28,17 @@ class DebugLogger:
         retrieved_chunks: list[dict],
         prompt: str,
         answer: str,
+        message_id: str | None = None,
+        session_id: str | None = None,
     ) -> None:
         if not self.enabled:
             return
 
         entry = {
+            "type": "answer",
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "message_id": message_id,
+            "session_id": session_id,
             "question": question,
             "detected_device": detected_device,
             "expanded_queries": expanded_queries,
@@ -42,12 +47,34 @@ class DebugLogger:
                     "source_file": c.get("source_file"),
                     "device": c.get("device"),
                     "type": c.get("type"),
-                    "text_preview": c["text"][:200],
+                    "text_preview": c.get("text", "")[:200],
                 }
                 for c in retrieved_chunks
             ],
             "prompt": prompt,
             "answer": answer,
         }
+        self._write(entry)
+
+    def log_rating(
+        self,
+        message_id: str,
+        rating: int,
+        session_id: str | None = None,
+        comment: str | None = None,
+    ) -> None:
+        if not self.enabled:
+            return
+
+        self._write({
+            "type": "rating",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "message_id": message_id,
+            "session_id": session_id,
+            "rating": rating,
+            "comment": comment,
+        })
+
+    def _write(self, entry: dict) -> None:
         with open(self.path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")

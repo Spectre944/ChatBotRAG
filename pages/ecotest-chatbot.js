@@ -7,6 +7,20 @@ window.openChatModal = function (e) {
   }
 };
 
+const CHAT_SCRIPT = document.currentScript;
+const DEVICE =
+  CHAT_SCRIPT?.dataset.device ||
+  location.pathname.split('/').pop().replace(/\.html$/, '') ||
+  'mksum';
+
+const SESSION_ID = (() => {
+  try {
+    let id = sessionStorage.getItem('ecotest_sid');
+    if (!id) { id = crypto.randomUUID(); sessionStorage.setItem('ecotest_sid', id); }
+    return id;
+  } catch { return crypto.randomUUID(); }
+})();
+
 document.addEventListener('DOMContentLoaded', function () {
   // 0. Подключаем внешнюю библиотеку marked.js для рендеринга Markdown
   if (!window.marked) {
@@ -304,17 +318,16 @@ document.addEventListener('DOMContentLoaded', function () {
       setTimeout(() => copyBtn.innerHTML = '📋', 2000);
     });
 
-    likeBtn.addEventListener('click', () => {
-      likeBtn.classList.toggle('active-like');
-      dislikeBtn.classList.remove('active-dislike');
-      sendFeedback('like', msgDiv.innerText);
-    });
-
-    dislikeBtn.addEventListener('click', () => {
-      dislikeBtn.classList.toggle('active-dislike');
-      likeBtn.classList.remove('active-like');
-      sendFeedback('dislike', msgDiv.innerText);
-    });
+	likeBtn.addEventListener('click', () => {
+		const on = likeBtn.classList.toggle('active-like');
+		dislikeBtn.classList.remove('active-dislike');
+		if (on) sendFeedback(messageId, 1);
+	});
+	dislikeBtn.addEventListener('click', () => {
+		const on = dislikeBtn.classList.toggle('active-dislike');
+		likeBtn.classList.remove('active-like');
+		if (on) sendFeedback(messageId, -1);
+	});
 
     actionsDiv.appendChild(likeBtn);
     actionsDiv.appendChild(dislikeBtn);
@@ -324,24 +337,18 @@ document.addEventListener('DOMContentLoaded', function () {
     messages.scrollTop = messages.scrollHeight;
   }
 
-  async function sendFeedback(type, answerText) {
-    const sessionId = window.location.pathname.replace('/', '') || 'default_session';
-    const ratingValue = type === 'like' ? 1 : -1;
-
-    try {
-      await fetch('/rate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionId,
-          rating: ratingValue,
-          comment: answerText
-        })
-      });
-    } catch (e) {
-      console.error('Не удалось отправить оценку:', e);
-    }
-  }
+	async function sendFeedback(messageId, rating, comment = null) {
+	  if (!messageId) return;
+	  try {
+		await fetch('/rate', {
+		  method: 'POST',
+		  headers: { 'Content-Type': 'application/json' },
+		  body: JSON.stringify({ message_id: messageId, session_id: SESSION_ID, rating, comment })
+		});
+	  } catch (e) {
+		console.error('Не удалось отправить оценку:', e);
+	  }
+	}
 
 // Регулируем переносы и списки
   function formatMarkdownText(text) {
@@ -381,10 +388,7 @@ document.addEventListener('DOMContentLoaded', function () {
       const response = await fetch('/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: text,
-          device: deviceName
-        })
+        body: JSON.stringify({ question: text, device: DEVICE, session_id: SESSION_ID })
       });
 
       if (!response.ok) throw new Error(`Помилка сервера: ${response.status}`);
@@ -401,22 +405,21 @@ document.addEventListener('DOMContentLoaded', function () {
         const lines = buffer.split('\n\n');
         buffer = lines.pop();
 
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (trimmedLine.startsWith('data: ')) {
-            const rawData = trimmedLine.replace('data: ', '');
-            if (rawData === '[DONE]') break;
-
-            rawAccumulatedText += rawData;
-
-            // Перерисовываем форматированный Markdown
-            renderMarkdown(botObj.msgDiv, rawAccumulatedText);
-            messages.scrollTop = messages.scrollHeight;
-          }
-        }
+		for (const line of lines) {
+		  if (!line.startsWith('data: ')) continue;
+		  const rawData = line.slice(6);          // без trim, иначе теряются пробелы в конце токенов
+		  if (rawData === '[DONE]') break;
+		  if (rawData.startsWith('[ID:')) {       // служебный пакет с ID ответа
+			messageId = rawData.slice(4, -1);
+			continue;
+		  }
+		  rawAccumulatedText += rawData;
+		  renderMarkdown(botObj.msgDiv, rawAccumulatedText);
+		  messages.scrollTop = messages.scrollHeight;
+		}
       }
 
-      attachActions(botObj.wrapper, botObj.msgDiv);
+      attachActions(botObj.wrapper, botObj.msgDiv, messageId);
 
     } catch (error) {
       console.error('Chatbot Stream Error:', error);

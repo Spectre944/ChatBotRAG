@@ -4,12 +4,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from typing import Literal
 
 from config import LLM_MODEL, LLM_PROVIDER
 from debug_logger import DebugLogger
 from llm import BaseLLM, build_prompt, create_llm
 from pipeline import build_context
 from retrieval import DocumentIndex, load_glossary
+
+DEVICE_NAMES = {
+    "spectra": "Spectra",   # подставьте реальные названия
+    "guarder": "Guarder",
+    "mksum":   "MKSUM",
+}
 
 app = FastAPI()
 
@@ -32,18 +39,24 @@ debug_logger = DebugLogger()
 
 class ChatRequest(BaseModel):
     question: str
-    device: str | None = None  # Явная передача прибора со страницы
+    device: str | None = None
+    session_id: str | None = None
 
 
 class RatingRequest(BaseModel):
-    session_id: str
-    rating: int = Field(..., ge=1, le=5)  # Оценка от 1 до 5
+    message_id: str
+    session_id: str | None = None
+    rating: Literal[-1, 1]          # дизлайк / лайк
     comment: str | None = None
 
 
-def stream_answer(question: str, device: str | None = None):
+def stream_answer(question, device=None, session_id=None):
     # Дополняем контекст выбранным прибором, если он передан
-    query_for_context = f"Прибор: {device}. Вопрос: {question}" if device else question
+    device_name = DEVICE_NAMES.get(device, device) if device else None
+    query_for_context = f"Прибор: {device_name}. Вопрос: {question}" if device_name else question
+
+    message_id = uuid.uuid4().hex
+    yield f"data: [ID:{message_id}]\n\n"      # фронт получит ID первым
     
     ctx = build_context(query_for_context, index, glossary, llm)
     
@@ -53,25 +66,24 @@ def stream_answer(question: str, device: str | None = None):
 
     prompt = build_prompt(question, ctx.context_text)
 
-    tokens: list[str] = []
-    for token in llm.stream_answer(question, ctx.chunks):
-        tokens.append(token)
-
-        # Экранируем \n, чтобы SSE не воспринимал их как разделители пакетов
-        safe_token = token.replace("\n", "\\n")
-        yield f"data: {safe_token}\n\n"
-
-    yield "data: [DONE]\n\n"
-    
-    debug_logger.log(
-        question=question,
-        detected_device=ctx.detected_device,
-        expanded_queries=ctx.expanded_queries,
-        retrieved_chunks=ctx.chunks,
-        prompt=prompt,
-        answer="".join(tokens),
-    )
-
+    tokens = []
+    try:
+        for token in llm.stream_answer(question, ctx.chunks):
+            tokens.append(token)
+            yield f"data: {token.replace(chr(10), '\\n')}\n\n"
+        yield "data: [DONE]\n\n"
+    finally:
+        # залогируется, даже если клиент закрыл соединение
+        debug_logger.log(
+            message_id=message_id,
+            session_id=session_id,
+            question=question,
+            detected_device=ctx.detected_device,
+            expanded_queries=ctx.expanded_queries,
+            retrieved_chunks=ctx.chunks,
+            prompt=prompt,
+            answer="".join(tokens),
+        )
 
 @app.post("/chat")
 def chat(req: ChatRequest):
@@ -82,12 +94,13 @@ def chat(req: ChatRequest):
 
 @app.post("/rate")
 def rate_answer(req: RatingRequest):
-    # Сохранение или логирование оценки для анализа и отладки
-    debug_logger.log(
+    debug_logger.log_rating(
+        message_id=req.message_id,
         session_id=req.session_id,
         rating=req.rating,
-        comment=req.comment
+        comment=req.comment,
     )
+    return {"status": "ok"}
 
 
 @app.get("/")
@@ -103,7 +116,7 @@ def get_guarder():
     return FileResponse("pages/guarder.html")
 
 @app.get("/mksum")
-def get_guarder():
+def get_mksum():
     return FileResponse("pages/mksum.html")
 
 app.mount("/", StaticFiles(directory="pages"), name="pages")
