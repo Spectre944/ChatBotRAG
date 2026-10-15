@@ -13,8 +13,7 @@ from retrieval import detect_device, expand_query, expand_query_with_glossary
 @dataclass
 class RetrievedContext:
     question: str
-    device_filter: str | None
-    device_source: str | None          # "ui" | "auto" | None
+    detected_device: str | None
     expanded_queries: list[str]
     chunks: list[dict] = field(default_factory=list)
 
@@ -24,11 +23,8 @@ class RetrievedContext:
 
 
 def build_context(question, index, glossary, llm: BaseLLM, k: int = SEARCH_K, device: str | None = None):
-    if device:
-        device_source = "ui"
-    else:
+    if not device:
         device = detect_device(question, index.get_known_devices())
-        device_source = "auto" if device else None
 
     glossary_variants = expand_query_with_glossary(question, glossary)
     queries = [question] + glossary_variants if glossary_variants else expand_query(question, llm)
@@ -43,8 +39,7 @@ def build_context(question, index, glossary, llm: BaseLLM, k: int = SEARCH_K, de
 
     return RetrievedContext(
         question=question,
-        device_filter=device,
-        device_source=device_source,
+        detected_device=device,
         expanded_queries=queries,
         chunks=results[:k],
     )

@@ -12,77 +12,25 @@ from pathlib import Path
 
 from config import DEBUG_LOG_PATH, DEBUG_MODE
 
-
 class DebugLogger:
-    def __init__(self, enabled: bool = DEBUG_MODE, path: Path = DEBUG_LOG_PATH):
+    def __init__(
+        self,
+        enabled: bool = DEBUG_MODE,
+        path: Path = DEBUG_LOG_PATH,
+    ):
         self.enabled = enabled
         self.path = path
+
         if self.enabled:
             self.path.parent.mkdir(parents=True, exist_ok=True)
 
-    def log(
-        self,
-        question: str,
-        device_filter: str | None,
-        device_source: str | None,
-        expanded_queries: list[str],
-        retrieved_chunks: list[dict],
-        prompt: str,
-        answer: str,
-        message_id: str | None = None,
-        session_id: str | None = None,
-    ) -> None:
-        if not self.enabled:
-            return
-
-        # Сколько найденных чанков не из того прибора, по которому шёл поиск.
-        # Должно быть 0, если device_filter задан.
-        off_device = (
-            sum(1 for c in retrieved_chunks if c.get("device") != device_filter)
-            if device_filter else 0
-        )
-
-        entry = {
-            "type": "answer",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "message_id": message_id,
-            "session_id": session_id,
-            "question": question,
-            "device_filter": device_filter,
-            "device_source": device_source,
-            "off_device_chunks": off_device,
-            "expanded_queries": expanded_queries,
-            "retrieved_chunks": [
-                {
-                    "source_file": c.get("source_file"),
-                    "device": c.get("device"),
-                    "type": c.get("type"),
-                    "text_preview": c.get("text", "")[:200],
-                }
-                for c in retrieved_chunks
-            ],
-            "prompt": prompt,
-            "answer": answer,
-        }
-        self._write(entry)
-
-    def log_rating(
-        self,
-        message_id: str,
-        rating: int,
-        session_id: str | None = None,
-        comment: str | None = None,
-    ) -> None:
+    def log(self, entry: dict) -> None:
         if not self.enabled:
             return
 
         self._write({
-            "type": "rating",
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "message_id": message_id,
-            "session_id": session_id,
-            "rating": rating,
-            "comment": comment,
+            **entry,
         })
 
     def _write(self, entry: dict) -> None:

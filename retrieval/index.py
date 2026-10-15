@@ -19,6 +19,7 @@ class DocumentIndex:
         self.chunks: list[str] = []
         self.metadata: list[dict] = []  # {"device", "source_file", "type", "doc_type"}
         self.index: faiss.Index | None = None
+        self._devices = None
 
     # --- Персистентность ---
     def exists_on_disk(self) -> bool:
@@ -86,6 +87,7 @@ class DocumentIndex:
         self.index.add(embeddings)
         self.chunks.extend(new_chunks)
         self.metadata.extend(new_meta)
+        self._build_cache()
         self.save()
         print(f"Добавлено {len(new_chunks)} чанков по прибору «{device_name}» ({doc_type})")
 

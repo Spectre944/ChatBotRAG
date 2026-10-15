@@ -41,14 +41,6 @@ def main() -> None:
         question = input("\nВопрос: ").strip()
         if not question:
             continue
-        if question.lower() == "exit":
-            break
-        if question.lower().startswith("add "):
-            parts = question.split(maxsplit=3)
-            folder, device = parts[1], parts[2]
-            doc_type = parts[3] if len(parts) > 3 else "manual"
-            index.add_documents(folder, device, doc_type)
-            continue
 
         ctx = build_context(question, index, glossary, llm)
 
@@ -63,14 +55,14 @@ def main() -> None:
         answer = llm.answer(question, ctx.chunks)
         print(f"\nОтвет: {answer}")
 
-        debug_logger.log(
-            question=question,
-            detected_device=ctx.detected_device,
-            expanded_queries=ctx.expanded_queries,
-            retrieved_chunks=ctx.chunks,
-            prompt=prompt,
-            answer=answer,
-        )
+        debug_logger.log({
+            "type": "answer",
+            "question": question,
+            "device": ctx.detected_device,
+            "expanded_queries": ctx.expanded_queries,
+            "prompt": prompt,
+            "answer": answer,
+        })
 
 
 if __name__ == "__main__":
