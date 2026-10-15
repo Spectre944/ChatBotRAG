@@ -15,6 +15,13 @@ from typing import TYPE_CHECKING
 
 from config import GLOSSARY_PATH
 
+DEVICE_ALIASES = {
+    "МКС-11 Spectra": ["spectra", "спектра", "мкс-11", "мкс11"],
+    "ДКГ-24 Guarder": ["guarder", "гардер", "дкг-24", "дкг24"],
+    "МКС-УМ":         ["мкс-ум", "мксум", "mksum", "mks-um"],
+    "Стора-АБГ":      ["стора", "stora"],
+}
+
 if TYPE_CHECKING:
     from llm.base import BaseLLM
 
@@ -65,26 +72,8 @@ def expand_query(question: str, llm: "BaseLLM") -> list[str]:
 
 
 def detect_device(question: str, known_devices: list[str]) -> str | None:
-    """
-    1) Точное вхождение названия прибора (без учёта регистра).
-    2) Нечёткое сравнение слов вопроса с названиями приборов — чтобы
-       выдержать опечатки (например, "МСУ-УМ" вместо "МКС-УМ").
-    Возвращает None, если ни один прибор не похож на упомянутый.
-    """
-    q_lower = question.lower()
-
-    for device in known_devices:
-        if device.lower() in q_lower:
+    q = question.lower()
+    for device, aliases in DEVICE_ALIASES.items():
+        if device in known_devices and any(a in q for a in aliases):
             return device
-
-    words = re.findall(r"[\w\-]+", question)
-    devices_lower = [d.lower() for d in known_devices]
-    best_device, best_ratio = None, 0.0
-    for word in words:
-        matches = difflib.get_close_matches(word.lower(), devices_lower, n=1, cutoff=0.6)
-        if matches:
-            ratio = difflib.SequenceMatcher(None, word.lower(), matches[0]).ratio()
-            if ratio > best_ratio:
-                best_ratio = ratio
-                best_device = known_devices[devices_lower.index(matches[0])]
-    return best_device
+    return None

@@ -50,20 +50,11 @@ class RatingRequest(BaseModel):
     comment: str | None = None
 
 
-def stream_answer(question, device=None, session_id=None):
-    # Дополняем контекст выбранным прибором, если он передан
-    device_name = DEVICE_NAMES.get(device, device) if device else None
-    query_for_context = f"Прибор: {device_name}. Вопрос: {question}" if device_name else question
-
+def stream_answer(question, device_name=None, session_id=None):
     message_id = uuid.uuid4().hex
-    yield f"data: [ID:{message_id}]\n\n"      # фронт получит ID первым
-    
-    ctx = build_context(query_for_context, index, glossary, llm)
-    
-    # Если прибор передан явно, фиксируем его
-    if device:
-        ctx.detected_device = device
+    yield f"data: [ID:{message_id}]\n\n"
 
+    ctx = build_context(question, index, glossary, llm, device=device_name)
     prompt = build_prompt(question, ctx.context_text)
 
     tokens = []
@@ -73,12 +64,12 @@ def stream_answer(question, device=None, session_id=None):
             yield f"data: {token.replace(chr(10), '\\n')}\n\n"
         yield "data: [DONE]\n\n"
     finally:
-        # залогируется, даже если клиент закрыл соединение
         debug_logger.log(
             message_id=message_id,
             session_id=session_id,
             question=question,
-            detected_device=ctx.detected_device,
+            device_filter=ctx.device_filter,
+            device_source=ctx.device_source,
             expanded_queries=ctx.expanded_queries,
             retrieved_chunks=ctx.chunks,
             prompt=prompt,
@@ -87,8 +78,12 @@ def stream_answer(question, device=None, session_id=None):
 
 @app.post("/chat")
 def chat(req: ChatRequest):
+    device_name = None
+    if req.device:
+        device_name = DEVICE_NAMES.get(req.device)          # "mksum" -> "МКС-УМ"
     return StreamingResponse(
-        stream_answer(req.question, req.device), media_type="text/event-stream"
+        stream_answer(req.question, device_name, req.session_id),
+        media_type="text/event-stream",
     )
 
 

@@ -23,7 +23,8 @@ class DebugLogger:
     def log(
         self,
         question: str,
-        detected_device: str | None,
+        device_filter: str | None,
+        device_source: str | None,
         expanded_queries: list[str],
         retrieved_chunks: list[dict],
         prompt: str,
@@ -34,13 +35,22 @@ class DebugLogger:
         if not self.enabled:
             return
 
+        # Сколько найденных чанков не из того прибора, по которому шёл поиск.
+        # Должно быть 0, если device_filter задан.
+        off_device = (
+            sum(1 for c in retrieved_chunks if c.get("device") != device_filter)
+            if device_filter else 0
+        )
+
         entry = {
             "type": "answer",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "message_id": message_id,
             "session_id": session_id,
             "question": question,
-            "detected_device": detected_device,
+            "device_filter": device_filter,
+            "device_source": device_source,
+            "off_device_chunks": off_device,
             "expanded_queries": expanded_queries,
             "retrieved_chunks": [
                 {

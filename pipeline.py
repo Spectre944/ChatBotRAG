@@ -13,7 +13,8 @@ from retrieval import detect_device, expand_query, expand_query_with_glossary
 @dataclass
 class RetrievedContext:
     question: str
-    detected_device: str | None
+    device_filter: str | None
+    device_source: str | None          # "ui" | "auto" | None
     expanded_queries: list[str]
     chunks: list[dict] = field(default_factory=list)
 
@@ -22,32 +23,28 @@ class RetrievedContext:
         return "\n---\n".join(c["text"] for c in self.chunks)
 
 
-def build_context(question: str, index, glossary: dict, llm: BaseLLM, k: int = SEARCH_K) -> RetrievedContext:
-    """
-    1) Определяем прибор по вопросу (если упомянут) — чтобы искать только
-       в его документации, а не по всей базе.
-    2) Сначала пробуем словарь терминов (быстро, предсказуемо); LLM для
-       переформулировки вопроса подключаем только если словарь не помог.
-    3) Ищем по всем вариантам запроса, объединяя результаты без дублей.
-    """
-    device = detect_device(question, index.get_known_devices())
+def build_context(question, index, glossary, llm: BaseLLM, k: int = SEARCH_K, device: str | None = None):
+    if device:
+        device_source = "ui"
+    else:
+        device = detect_device(question, index.get_known_devices())
+        device_source = "auto" if device else None
 
     glossary_variants = expand_query_with_glossary(question, glossary)
     queries = [question] + glossary_variants if glossary_variants else expand_query(question, llm)
 
-    seen_texts = set()
-    results = []
+    seen_texts, results = set(), []
     for q in queries:
         for r in index.search(q, k=3, device_filter=device):
             key = r["text"][:80]
             if key not in seen_texts:
                 seen_texts.add(key)
                 results.append(r)
-    results = results[:k]
 
     return RetrievedContext(
         question=question,
-        detected_device=device,
+        device_filter=device,
+        device_source=device_source,
         expanded_queries=queries,
-        chunks=results,
+        chunks=results[:k],
     )

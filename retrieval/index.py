@@ -31,6 +31,7 @@ class DocumentIndex:
             self.chunks = data["chunks"]
             self.metadata = data["metadata"]
         print(f"Загружен индекс: {len(self.chunks)} чанков")
+        self._build_cache()
 
     def save(self) -> None:
         INDEX_DIR.mkdir(exist_ok=True)
@@ -94,30 +95,25 @@ class DocumentIndex:
         return sorted({m["device"] for m in self.metadata})
 
     # --- Поиск ---
-    def search(
-        self,
-        query: str,
-        k: int = 5,
-        device_filter: str | None = None,
-        use_mmr: bool = True,
-    ) -> list[dict]:
-        q_emb = self.embedder.encode([f"query: {query}"], normalize_embeddings=True).astype("float32")
+    def _build_cache(self):
+        self._embs = self.index.reconstruct_n(0, self.index.ntotal)   # вызвать в load() и после add_documents()
+        self._devices = np.array([m["device"] for m in self.metadata])
 
-        pool_size = max(k * 6, 20) if device_filter or use_mmr else k
-        distances, idx = self.index.search(q_emb, min(pool_size, len(self.chunks)))
-
-        candidates = []
-        for i, dist in zip(idx[0], distances[0]):
-            if i < 0:
-                continue
-            if device_filter and self.metadata[i]["device"] != device_filter:
-                continue
-            candidates.append({"i": i, "sim_to_query": float(dist)})
-
+    def search(self, query, k=5, device_filter=None, use_mmr=True):
+        q = self.embedder.encode([f"query: {query}"], normalize_embeddings=True).astype("float32")[0]
+        if device_filter:
+            ids = np.where(self._devices == device_filter)[0]
+            if len(ids) == 0:
+                return []
+            sims = self._embs[ids] @ q
+            top = np.argsort(-sims)[:max(k * 6, 20)]
+            candidates = [{"i": int(ids[j]), "sim_to_query": float(sims[j])} for j in top]
+        else:
+            distances, idx = self.index.search(q[None, :], min(max(k * 6, 20), len(self.chunks)))
+            candidates = [{"i": int(i), "sim_to_query": float(d)} for i, d in zip(idx[0], distances[0]) if i >= 0]
         if not candidates:
             return []
-
-        chosen = candidates[:k] if not use_mmr else self._mmr_select(candidates, k)
+        chosen = self._mmr_select(candidates, k) if use_mmr else candidates[:k]
         return [{"text": self.chunks[c["i"]], **self.metadata[c["i"]]} for c in chosen]
 
     def _mmr_select(self, candidates: list[dict], k: int, lambda_param: float = MMR_LAMBDA) -> list[dict]:
