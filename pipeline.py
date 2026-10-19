@@ -7,7 +7,10 @@ from dataclasses import dataclass, field
 
 from config import SEARCH_K
 from llm.base import BaseLLM
-from retrieval import detect_device, expand_query, expand_query_with_glossary
+from retrieval import build_search_queries, detect_device
+
+PER_QUERY_K = 5   # сколько результатов берём с каждого запроса
+RRF_K = 60        # константа Reciprocal Rank Fusion
 
 
 @dataclass
@@ -26,20 +29,21 @@ def build_context(question, index, glossary, llm: BaseLLM, k: int = SEARCH_K, de
     if not device:
         device = detect_device(question, index.get_known_devices())
 
-    glossary_variants = expand_query_with_glossary(question, glossary)
-    queries = [question] + glossary_variants if glossary_variants else expand_query(question, llm)
+    queries = build_search_queries(question, glossary, llm)
 
-    seen_texts, results = set(), []
+    # RRF: фрагмент, найденный по нескольким запросам или высоко по одному, поднимается выше.
+    scores: dict[str, float] = {}
+    chunks_by_key: dict[str, dict] = {}
     for q in queries:
-        for r in index.search(q, k=3, device_filter=device):
+        for rank, r in enumerate(index.search(q, k=PER_QUERY_K, device_filter=device)):
             key = r["text"][:80]
-            if key not in seen_texts:
-                seen_texts.add(key)
-                results.append(r)
+            scores[key] = scores.get(key, 0.0) + 1.0 / (RRF_K + rank + 1)
+            chunks_by_key.setdefault(key, r)
 
+    ranked = sorted(scores, key=scores.get, reverse=True)
     return RetrievedContext(
         question=question,
         detected_device=device,
         expanded_queries=queries,
-        chunks=results[:k],
+        chunks=[chunks_by_key[key] for key in ranked[:k]],
     )

@@ -187,13 +187,11 @@ def _substitute(question: str, q_words: list, positions: list[int], term: str) -
     return re.sub(r"\s+", " ", "".join(parts)).strip()
 
 
-def expand_query_with_glossary(question: str, glossary: dict) -> list[str]:
-    """Варианты вопроса, где бытовая формулировка заменена на термин из документации.
-    Пустой список, если ни одно понятие не найдено (тогда вызывающий код подключает LLM).
-    Поле devices в словаре справочное и здесь намеренно не используется."""
+def _match_concepts(question: str, glossary: dict) -> tuple[list, list[tuple[str, list[int]]]]:
+    """Понятия из словаря, найденные в вопросе: (q_words, [(id_понятия, позиции_слов), ...])."""
     q_words = _question_words(question)
     if not q_words:
-        return []
+        return q_words, []
 
     # Для каждого понятия берём самую длинную (самую точную) найденную фразу.
     matches: dict[str, list[int]] = {}
@@ -219,6 +217,15 @@ def expand_query_with_glossary(question: str, glossary: dict) -> list[str]:
         covered |= set(positions)
         if len(selected) == MAX_CONCEPTS:
             break
+    return q_words, selected
+
+
+def expand_query_with_glossary(question: str, glossary: dict) -> list[str]:
+    """СТАРЫЙ путь (подстановка слов в предложение). Оставлен для совместимости;
+    основной путь теперь build_search_queries. Поле devices здесь не используется."""
+    q_words, selected = _match_concepts(question, glossary)
+    if not selected:
+        return []
 
     # Сначала первый термин каждого понятия, потом вторые и т.д.: так при обрезке
     # результатов поиска каждое понятие остаётся представленным.
@@ -229,6 +236,68 @@ def expand_query_with_glossary(question: str, glossary: dict) -> list[str]:
             if n < len(terms):
                 variants.append(_substitute(question, q_words, positions, terms[n]))
     return list(dict.fromkeys(v for v in variants if v != question))   # без дублей
+
+
+# ════════════════════════════════════════════════════════════════════
+# 4b. Основной путь: словарь как подсказка + одна LLM-переформулировка
+# ════════════════════════════════════════════════════════════════════
+
+MAX_QUERIES = 4   # оригинал + 2 от LLM + терминный запрос
+
+
+def _clean_llm_lines(raw: str) -> list[str]:
+    lines = []
+    for ln in raw.split("\n"):
+        ln = re.sub(r"^\s*(\d+[.)]|[-•*])\s*", "", ln).strip(" .")
+        ln = re.sub(r"^(строка|рядок|line)\s*\d*\s*[:.-]\s*", "", ln, flags=re.I)
+        if ln:
+            lines.append(ln)
+    return lines
+
+
+def build_search_queries(question: str, glossary: dict, llm: "BaseLLM") -> list[str]:
+    """[оригинал, до 2 переформулировок на украинском, терминный запрос].
+    Словарь находит понятия и даёт LLM точные термины; LLM чинит опечатки и переводит
+    на язык документации. Терминный запрос из словаря добавляется всегда как страховка."""
+    q_words, selected = _match_concepts(question, glossary)
+
+    hints = []
+    for cid, positions in selected:
+        said = " ".join(q_words[i][3] for i in positions)
+        terms = ", ".join(glossary[cid]["doc_terms"][:MAX_TERMS])
+        hints.append(f"- «{said}» = {terms}")
+    hint_block = ("Термины из документации (используй их точно):\n" + "\n".join(hints)) if hints else ""
+
+    prompt = f"""Ты помогаешь искать ответ в технической документации прибора. Документация на украинском языке.
+Преобразуй вопрос пользователя в поисковые запросы на украинском.
+
+Правила:
+- Исправь опечатки и переведи вопрос на украинский.
+- Бытовые слова заменяй терминами документации из списка ниже. Не выдумывай другие термины.
+- Названия приборов, кнопок и индикаторов (RAYS/RESTART, ON/SAVE, CHARGE, ALARM, GPS) оставь без изменений.
+- Строка 1: полный вопрос на украинском.
+- Строка 2: 3-6 ключевых слов на украинском, без вопросительных слов.
+- Выведи ТОЛЬКО эти 2 строки, без нумерации и пояснений.
+
+{hint_block}
+
+Вопрос: {question}"""
+
+    print(f"build_search_queries : {prompt}")
+
+    queries = [question]
+    try:
+        raw = llm.raw_generate(prompt, max_tokens=120)
+        queries += _clean_llm_lines(raw)[:2]
+    except Exception:
+        log.exception("query rewrite failed, using glossary only")
+
+    if selected:
+        covered = {i for _, pos in selected for i in pos}
+        rest = [w[3] for i, w in enumerate(q_words) if i not in covered]
+        queries.append(" ".join([glossary[cid]["doc_terms"][0] for cid, _ in selected] + rest))
+
+    return list(dict.fromkeys(q for q in queries if q.strip()))[:MAX_QUERIES]
 
 
 # ════════════════════════════════════════════════════════════════════
