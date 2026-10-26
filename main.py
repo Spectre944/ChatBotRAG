@@ -1,11 +1,11 @@
 """
-CLI для RAG-чат-бота по документации приборов.
+CLI для RAG-чат-бота з документації приладів.
 
 Запуск:
     python main.py
-Команды внутри чата:
-    exit                           — выход
-    add <папка> <прибор> [тип]     — добавить документацию (тип: manual|tu, по умолчанию manual)
+Команди всередині чату:
+    exit                           — вихід
+    add <папка> <прилад> [тип]     — додати документацію (тип: manual|tu, за замовчуванням manual)
 """
 from config import LLM_MODEL, LLM_PROVIDER
 from debug_logger import DebugLogger
@@ -19,7 +19,7 @@ def main() -> None:
     if index.exists_on_disk():
         index.load()
     else:
-        print("Индекс не найден, создаю новый и добавляю документы...")
+        print("Індекс не знайдено, створюю новий і додаю документи...")
         index.add_documents("./docs/MKS_UM", device_name="МКС-УМ")
         index.add_documents("./docs/Spectra", device_name="МКС-11 Spectra")
         index.add_documents("./docs/Guarder", device_name="ДКГ-24 Guarder")
@@ -36,24 +36,24 @@ def main() -> None:
     llm: BaseLLM = create_llm(LLM_PROVIDER, LLM_MODEL)
     debug_logger = DebugLogger()
 
-    print("\nГотово! Команды: 'exit' — выход, 'add <папка> <прибор> [manual|tu]' — добавить документацию")
+    print("\nГотово! Команди: 'exit' — вихід, 'add <папка> <прилад> [manual|tu]' — додати документацію")
     while True:
-        question = input("\nВопрос: ").strip()
+        question = input("\nПитання: ").strip()
         if not question:
             continue
 
         ctx = build_context(question, index, glossary, llm)
 
         if ctx.detected_device:
-            print(f"[Определён прибор]: {ctx.detected_device}")
-        print(f"[Формулировки поиска]: {ctx.expanded_queries}")
-        print("[Найденные фрагменты]")
+            print(f"[Прилад]: {ctx.detected_device}")
+        print(f"[Формулювання пошуку]: {ctx.expanded_queries}")
+        print("[Знайдені фрагменти]")
         for r in ctx.chunks:
             print(f"  ({r['device']} / {r['source_file']} / {r.get('doc_type', '?')}): {r['text'][:100]}...")
 
         prompt = build_prompt(question, ctx.context_text)
         answer = llm.answer(question, ctx.chunks)
-        print(f"\nОтвет: {answer}")
+        print(f"\nВідповідь: {answer}")
 
         debug_logger.log({
             "type": "answer",
