@@ -283,8 +283,6 @@ def build_search_queries(question: str, glossary: dict, llm: "BaseLLM") -> list[
 
 Запитання: {question}"""
 
-    print(f"build_search_queries : {prompt}")
-
     queries = [question]
     try:
         raw = llm.raw_generate(prompt, max_tokens=120)

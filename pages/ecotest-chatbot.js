@@ -8,10 +8,7 @@ window.openChatModal = function (e) {
 };
 
 const CHAT_SCRIPT = document.currentScript;
-const DEVICE =
-  CHAT_SCRIPT?.dataset.device ||
-  location.pathname.split('/').pop().replace(/\.html$/, '') ||
-  'mksum';
+const DEVICE = CHAT_SCRIPT?.dataset.device || null;
 
 const SESSION_ID = (() => {
   try {
@@ -383,8 +380,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let rawAccumulatedText = '';
 
     try {
-      const deviceName = window.location.pathname.replace('/', '') || 'mksum';
-
+      
       const response = await fetch('/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

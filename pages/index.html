@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ECOTEST — чат-консультант</title>
+</head>
+<body>
+  <!--
+    Сторінка порожня навмисно: віджет сам додає плаваючу кнопку
+    «Онлайн-консультант» у правому нижньому куті та вікно чату.
+  -->
+ 
+  <!--
+    Підключати звичайним <script> (не type="module"), інакше
+    document.currentScript буде null і data-device не прочитається.
+    data-device — ідентифікатор приладу, який піде на бекенд в поле "device".
+  -->
+  <script src="ecotest-chatbot.js"></script>
+</body>
+</html>
+ 

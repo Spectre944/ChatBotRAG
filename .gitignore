@@ -6,6 +6,7 @@ index_data/
 
 # Логи дебаг-режима
 logs/
+test/results
 
 # Python
 __pycache__/

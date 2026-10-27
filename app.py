@@ -124,7 +124,7 @@ def rate_answer(req: RatingRequest):
 
 @app.get("/")
 def root():
-    return FileResponse("index.html")
+    return FileResponse("pages/index.html")
 
 @app.get("/spectra")
 def get_spectra():
